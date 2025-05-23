@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1085314854533",
+    "project_id": "incubatorsdb",
+    "storage_bucket": "incubatorsdb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1085314854533:android:0c0479480cdf73e8cdc3ec",
+        "android_client_info": {
+          "package_name": "com.ben0998.appcontroller"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIO96dyig7SM2WOa-dbrJphX8rwAhCQJY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

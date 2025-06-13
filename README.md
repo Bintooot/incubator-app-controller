@@ -22,5 +22,5 @@ A mobile application built with **React Native** and **Expo** that allows users 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/iot-incubator-app.git
+   git clone https://github.com/Bintooot/iot-incubator-app.git
    cd iot-incubator-app

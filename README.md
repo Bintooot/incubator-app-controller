@@ -16,8 +16,7 @@ A mobile application built with **React Native** and **Expo** that allows users 
 - [React Native](https://reactnative.dev/)  
 - [Expo](https://expo.dev/)  
 - [React Navigation](https://reactnavigation.org/)  
-- [Axios](https://axios-http.com/) (or your preferred HTTP client)  
-- [IoT API Backend] (custom or Firebase/MQTT based, specify if applicable)
+- [Axios](https://axios-http.com/) 
 
 ## 📲 Installation & Setup
 

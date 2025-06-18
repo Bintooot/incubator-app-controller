@@ -19,8 +19,8 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import axios from "axios";
 
-const ESP32_URL_DHT22 = "http://192.168.1.86/sensor";
-const ESP32_IP_MOTOR_1 = "http://192.168.1.87";
+const ESP32_URL_DHT22 = "http://192.168.1.62/sensor";
+const ESP32_IP_MOTOR_1 = "http://192.168.1.33";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({

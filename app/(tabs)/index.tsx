@@ -20,7 +20,7 @@ import Constants from "expo-constants";
 import axios from "axios";
 
 const ESP32_URL_DHT22 = "http://192.168.1.43/sensor";
-const ESP32_IP_MOTOR_1 = "http://192.168.1.60";
+const ESP32_IP_MOTOR_1 = "http://192.168.1.53";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -213,7 +213,7 @@ export default function HomeScreen() {
   };
 
   const handleLinkPress = () => {
-    Linking.openURL("http://192.168.1.60/").catch((err) =>
+    Linking.openURL(`${ESP32_IP_MOTOR_1}`).catch((err) =>
       console.error("Failed to open URL:", err)
     );
   };
@@ -593,7 +593,7 @@ export default function HomeScreen() {
           <Text>
             Click the link:{" "}
             <TouchableOpacity onPress={handleLinkPress}>
-              <Text style={{ color: "blue" }}>http://192.168.1.60/</Text>
+              <Text style={{ color: "blue" }}>{ESP32_IP_MOTOR_1}</Text>
             </TouchableOpacity>
           </Text>
         </View>

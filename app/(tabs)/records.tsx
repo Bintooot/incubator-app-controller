@@ -177,7 +177,7 @@ export default function RecordsScreen() {
   const [status, setStatus] = useState("");
 
   const [data, setData] = useState<Batch[]>([]);
-  const [latestBatch, setLatestBatch] = useState<LatestBatch | null>(null);
+  const [latestBatches, setLatestBatches] = useState<LatestBatch[]>([]);
 
   const [expoPushToken, setExpoPushToken] = useState("");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -186,11 +186,24 @@ export default function RecordsScreen() {
 
   const [notification, setNotification] = useState("");
 
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
     registerForPushNotificationsAsync()
       .then((token) => setExpoPushToken(token ?? ""))
       .catch((error: any) => setExpoPushToken(`${error}`));
   }, []);
+
+  // Return random Batch
+  const generateRandomID = (length = 4) => {
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
 
   const [newBatch, setNewBatch] = useState({
     batchId: "",
@@ -207,13 +220,26 @@ export default function RecordsScreen() {
   const [updateBatch, setUpdateBatch] = useState({
     success: 0,
   });
+  const [isBatchReadyToComplete, setIsBatchReadyToComplete] = useState(false);
 
   const handleCompletedButton = (
     id: string,
     quantity: number,
-    endDate: Date
+    endDate: Date | Timestamp | null
   ) => {
     if (id && quantity > 0) {
+      const now = new Date();
+
+      let end: Date | null = null;
+      if (endDate instanceof Timestamp) {
+        end = endDate.toDate();
+      } else if (endDate instanceof Date) {
+        end = endDate;
+      }
+
+      const isReady = end !== null && now.getTime() >= end.getTime();
+
+      setIsBatchReadyToComplete(isReady);
       setSelectedBatch({ id, quantity, endDate });
       setModalCompletedVisible(true);
     } else {
@@ -230,83 +256,26 @@ export default function RecordsScreen() {
     }, 3000);
   };
 
-  const fetchAllData = () => {
+  useEffect(() => {
     const q = query(
       collection(db, "batches"),
-      where("status", "in", ["Completed", "Cancel"]),
+      where("status", "in", ["In Progress", "Ivaluate"]),
       orderBy("startDate", "desc")
-    );
-
-    const unsubscribe = onSnapshot(
-      q, // Reference to your collection
-      (snapshot) => {
-        const batches: Batch[] = [];
-        snapshot.forEach((doc) => {
-          batches.push({
-            id: doc.id,
-            batchId: doc.data().batchId,
-            aveTemp: doc.data().aveTemp,
-            aveHumidity: doc.data().aveHumidity,
-            startDate:
-              doc.data().startDate instanceof Timestamp
-                ? doc.data().startDate.toDate()
-                : new Date(doc.data().startDate), // Convert Timestamp to Date
-            status: doc.data().status,
-            duration: doc.data().duration,
-            endDate: doc.data().endDate,
-            description: doc.data().description,
-            quantity: doc.data().quantity,
-            success: doc.data().success,
-            rate: doc.data().rate,
-          });
-        });
-
-        if (snapshot.empty) {
-          console.log("No data found");
-        }
-        console.log(batches);
-        setData(batches);
-      },
-      (error) => {
-        console.error("Error fetching data: ", error);
-      }
-    );
-
-    // Cleanup the listener on component unmount
-    return () => unsubscribe();
-  };
-
-  // Move the useEffect here to directly listen for changes in the batch data
-  useEffect(() => {
-    fetchAllData();
-  }, []); // Empty dependency array to run effect once when component mounts
-
-  useEffect(() => {
-    const q = query(
-      collection(db, "batches"),
-      where("status", "==", "In Progress"),
-      orderBy("startDate", "desc"),
-      limit(1)
     );
 
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
         if (!querySnapshot.empty) {
-          const latestBatchDoc = querySnapshot.docs[0];
+          const batches: LatestBatch[] = querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as LatestBatch[];
 
-          // Combine the document ID with the batch data
-          const latestBatchData = {
-            id: latestBatchDoc.id, // Document ID
-            ...latestBatchDoc.data(), // Data from Firestore
-          } as LatestBatch;
-
-          // Set the latest batch data in state
-          setLatestBatch(latestBatchData);
-
-          console.log(latestBatchData); // Logs the latest batch including the id
+          setLatestBatches(batches);
+          console.log("Fetched batches:", batches);
         } else {
-          console.log("No data available.");
+          setLatestBatches([]); // Clear if none
         }
       },
       (error) => {
@@ -318,32 +287,47 @@ export default function RecordsScreen() {
   }, []);
 
   useEffect(() => {
-    if (!latestBatch) return;
+    if (notification) {
+      const timer = setTimeout(() => setNotification(""), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
+  useEffect(() => {
+    if (!latestBatches || latestBatches.length === 0) return;
+
+    const notifiedBatchIds = new Set<string>();
 
     const intervalId = setInterval(() => {
-      const batchEndDate =
-        latestBatch.endDate === null
-          ? null
-          : latestBatch.endDate instanceof Timestamp
-          ? latestBatch.endDate.toDate()
-          : new Date(latestBatch.endDate);
+      const now = new Date();
 
-      if (batchEndDate !== null) {
-        const now = new Date();
+      latestBatches.forEach((batch) => {
+        const batchEndDate =
+          batch.endDate === null
+            ? null
+            : batch.endDate instanceof Timestamp
+            ? batch.endDate.toDate()
+            : new Date(batch.endDate);
 
-        if (now.getTime() >= batchEndDate.getTime()) {
+        if (
+          batchEndDate !== null &&
+          now.getTime() >= batchEndDate.getTime() &&
+          !notifiedBatchIds.has(batch.id)
+        ) {
+          // Notify only once per batch
           incubationProcessCompleted(expoPushToken);
+          setNotification(`Incubation for Batch ${batch.batchId} completed.`);
+          evaluateBatch(batch.id, batch.success || 0);
           setLatestBatchStatus(true);
-          setNotification("Incubation process completed.");
-          clearInterval(intervalId);
+          notifiedBatchIds.add(batch.id);
         }
-      }
+      });
 
-      setCurrentDate(new Date());
+      setCurrentDate(now);
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [latestBatch]);
+  }, [latestBatches, expoPushToken]);
 
   function calculateEndDate(
     startDate: Date | string,
@@ -365,69 +349,29 @@ export default function RecordsScreen() {
   }
 
   const handleAddBatch = async () => {
+    if (loading) return;
     try {
-      if (
-        !newBatch.batchId ||
-        !newBatch.quantity ||
-        !newBatch.description ||
-        !newBatch.duration
-      ) {
+      if (!newBatch.quantity || !newBatch.description || !newBatch.duration) {
         alert("Input is missing, please provide all the required information.");
         return;
       }
-      const cq = query(
-        collection(db, "batches"),
-        where("status", "==", "Completed")
-      );
-      const q = query(
-        collection(db, "batches"),
-        where("status", "==", "In Progress")
-      );
 
-      const querySnapshot = await getDocs(q);
-      const compeltedQuery = await getDocs(cq);
+      setLoading(true);
 
-      let inProgressBatchId = null;
-      let completedBatchId = null;
-      let batchId = null;
       const status = "In Progress";
-
-      // Check if there is an "In Progress" batch
-      if (!querySnapshot.empty) {
-        inProgressBatchId = querySnapshot.docs[0].data().status;
-      }
-
-      if (!querySnapshot.empty) {
-        batchId = querySnapshot.docs[0].data().batchId;
-      }
-
-      // Check if there is a "Completed" batch
-      if (!compeltedQuery.empty) {
-        completedBatchId = compeltedQuery.docs[0].data().batchId;
-      }
-
-      // Check if the newBatch.batchId is already in use
-      if (status === inProgressBatchId) {
-        alert(
-          `Batch "${batchId}" is In Progress. Please wait until it's completed.`
-        );
-        return;
-      } else if (newBatch.batchId === completedBatchId) {
-        alert(`Batch Id "${completedBatchId}" is already in use.`);
-        return;
-      }
+      const batchId = generateRandomID();
 
       const endDate = calculateEndDate(newBatch.startDate, newBatch.duration);
 
       const timestamp = Timestamp.fromDate(new Date());
 
       await addDoc(collection(db, "batches"), {
-        batchId: newBatch.batchId,
+        batchId: batchId,
         startDate: timestamp,
         aveTemp: newBatch.aveTemp,
         aveHumidity: newBatch.aveHumidity,
         duration: newBatch.duration,
-        status: "In Progress",
+        status: status,
         endDate: endDate,
         description: newBatch.description,
         quantity: newBatch.quantity,
@@ -450,6 +394,8 @@ export default function RecordsScreen() {
     } catch (error) {
       console.error("Error adding new batch: ", error);
       alert("Failed to add batch");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -466,6 +412,7 @@ export default function RecordsScreen() {
     newStatus: string,
     success: number
   ) => {
+    setLoading(true);
     try {
       const batchRef = doc(db, "batches", batchId);
       const batchDoc = await getDoc(batchRef);
@@ -494,15 +441,15 @@ export default function RecordsScreen() {
         });
 
         const defaultBatch = {
-          id: batchId, // Add the 'id' field
-          batchId: "..",
+          id: batchId,
+          batchId: "N/A",
           aveTemp: "37.5",
           duration: 0,
           aveHumidity: "65",
           quantity: 0,
           success: 0,
-          status: "..",
-          description: "",
+          status: "N/A",
+          description: "N/A",
           startDate: null,
           endDate: null,
         };
@@ -510,7 +457,6 @@ export default function RecordsScreen() {
         setNotification("");
         setLatestBatchStatus(false);
         setSelectedBatch(defaultBatch);
-        setLatestBatch(defaultBatch);
         setModalCompletedVisible(false);
         showNotification(`Batch status updated to ${newStatus}.`, "success");
       } else {
@@ -519,12 +465,68 @@ export default function RecordsScreen() {
     } catch (error) {
       console.error("Error updating current batch: ", error);
       alert("Failed to update current batch");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Ivaluation
+
+  const evaluateBatch = async (batchId: string, success: number) => {
+    setLoading(true);
+    try {
+      const batchRef = doc(db, "batches", batchId);
+      const batchDoc = await getDoc(batchRef);
+
+      if (batchDoc.exists()) {
+        const batchData = batchDoc.data();
+        const batchQuantity = parseInt(batchData?.quantity);
+
+        const rate = calculateSuccessRate(success, batchQuantity);
+
+        await updateDoc(batchRef, {
+          status: "Ivaluate",
+          success: success,
+          rate: rate,
+        });
+
+        const defaultBatch = {
+          id: batchId,
+          batchId: "N/A",
+          aveTemp: "37.5",
+          duration: 0,
+          aveHumidity: "65",
+          quantity: 0,
+          success: 0,
+          status: "N/A",
+          description: "N/A",
+          startDate: null,
+          endDate: null,
+        };
+
+        setNotification("");
+        setLatestBatchStatus(false);
+        setSelectedBatch(defaultBatch);
+        setModalCompletedVisible(false);
+        showNotification("Batch status updated to Ivaluate.", "success");
+      } else {
+        console.log("Batch not found");
+      }
+    } catch (error) {
+      console.error("Error evaluating batch: ", error);
+      alert("Failed to evaluate batch.");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleCancelBatch = async (batchId: string, newStatus: string) => {
+    if (loading) return;
+
     try {
       const batchRef = doc(db, "batches", batchId);
+
+      setLoading(true);
 
       // Update the Firestore document
       await updateDoc(batchRef, {
@@ -535,13 +537,13 @@ export default function RecordsScreen() {
 
       const defaultBatch = {
         id: batchId,
-        batchId: "..",
+        batchId: "N/A",
         aveTemp: "37.5",
         duration: 0,
         aveHumidity: "65",
         quantity: 0,
         success: 0,
-        status: "..",
+        status: "N/A",
         description: "",
         startDate: null,
         endDate: null,
@@ -549,12 +551,13 @@ export default function RecordsScreen() {
 
       setLatestBatchStatus(false);
       setSelectedBatch(defaultBatch);
-      setLatestBatch(defaultBatch);
       setModalCompletedVisible(false);
       showNotification(`Batch status updated to ${newStatus}.`, "cancel");
     } catch (error) {
       console.error("Error updating current batch: ", error);
       alert("Failed to update current batch");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -563,6 +566,12 @@ export default function RecordsScreen() {
       {visibleNotification && (
         <View style={styles.notification}>
           <Text style={styles.notificationText}>{message}</Text>
+        </View>
+      )}
+
+      {notification !== "" && (
+        <View style={styles.notificationContainer}>
+          <Text style={styles.notificationText}>{notification}</Text>
         </View>
       )}
 
@@ -584,207 +593,102 @@ export default function RecordsScreen() {
             <Text style={styles.sectionTitle}>Current Incubation</Text>
           </View>
 
-          <View style={styles.currentBatchCard}>
-            <View style={styles.batchHeader}>
-              <View style={styles.batchInfo}>
-                <Text style={styles.batchTitle}>
-                  Batch # {latestBatch?.batchId || ".."}
-                </Text>
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>{latestBatch?.status}</Text>
-                </View>
-              </View>
-              <Text style={styles.batchDate}>
-                Start Date:{" "}
-                {latestBatch?.startDate
-                  ? latestBatch.startDate instanceof Timestamp
-                    ? format(
-                        latestBatch.startDate.toDate(),
-                        "MMMM dd, yyyy hh:mm a"
-                      )
-                    : latestBatch.startDate instanceof Date
-                    ? format(latestBatch.startDate, "MMMM dd, yyyy hh:mm a")
-                    : ".."
-                  : ".."}
-              </Text>
-
-              <Text style={styles.batchDate}>
-                End Date:{" "}
-                {latestBatch?.endDate
-                  ? latestBatch.endDate instanceof Timestamp
-                    ? format(
-                        latestBatch.endDate.toDate(),
-                        "MMMM dd, yyyy hh:mm a"
-                      )
-                    : latestBatch.endDate instanceof Date
-                    ? format(latestBatch.endDate, "MMMM dd, yyyy hh:mm a")
-                    : ".."
-                  : ".."}
-              </Text>
-
-              <Text style={styles.batchDate}>
-                Description: {latestBatch?.description || ".."}{" "}
-              </Text>
+          {latestBatches.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No batch record yet.</Text>
             </View>
-
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <MaterialCommunityIcons
-                  name="calendar"
-                  size={20}
-                  color="#666"
-                />
-                <Text style={styles.statValue}>
-                  {latestBatch?.duration || 0}
-                </Text>
-                <Text style={styles.statLabel}>Days Duration</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <MaterialCommunityIcons name="egg" size={20} color="#666" />
-                <Text style={styles.statValue}>
-                  {latestBatch?.quantity || 0}
-                </Text>
-                <Text style={styles.statLabel}>Egg Quantity</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <MaterialCommunityIcons
-                  name="thermometer"
-                  size={20}
-                  color="#666"
-                />
-                <Text style={styles.statValue}>
-                  {latestBatch?.aveTemp || "37.5"}
-                </Text>
-                <Text style={styles.statLabel}>Avg. Temp</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <MaterialCommunityIcons
-                  name="water-percent"
-                  size={20}
-                  color="#666"
-                />
-                <Text style={styles.statValue}>
-                  {latestBatch?.aveHumidity || "65"}
-                </Text>
-                <Text style={styles.statLabel}>Avg. Humidity</Text>
-              </View>
-            </View>
-
-            {latestBatchStatus && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifText}>{notification}</Text>
-              </View>
-            )}
-
-            <View style={styles.completionDetails}>
-              <TouchableOpacity
-                style={styles.viewDetailsButton}
-                onPress={() => {
-                  if (latestBatch?.id && latestBatch?.quantity) {
-                    handleCompletedButton(
-                      latestBatch.id,
-                      latestBatch.quantity,
-                      latestBatch.endDate || new Date()
-                    );
-                  } else {
-                    alert("Set first a new batch to incubate.");
-                  }
-                }}
-              >
-                <Text style={styles.viewDetailsText}>Set Action</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
-        {/* History Records Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialCommunityIcons name="history" size={24} color="#4c669f" />
-            <Text style={styles.sectionTitle}>History Records</Text>
-          </View>
-
-          {/* Record Cards */}
-          {data &&
-            data.map((record, index) => (
-              <TouchableOpacity key={index} style={styles.recordCard}>
-                <View style={styles.recordHeader}>
-                  <View>
-                    <Text style={styles.recordTitle}>
-                      Batch #{record.batchId}
+          ) : (
+            latestBatches.map((batch) => (
+              <View key={batch.id} style={styles.currentBatchCard}>
+                <View style={styles.batchHeader}>
+                  <View style={styles.batchInfo}>
+                    <Text style={styles.batchTitle}>
+                      Batch # {batch.batchId || "N/A"}
                     </Text>
-                    <Text style={styles.recordDate}>
-                      <Text>Start Date: </Text>
-                      {record.startDate instanceof Date
-                        ? format(record.startDate, "MMMM dd, yyyy hh:mm a")
-                        : record.startDate}
-                    </Text>
-                    <Text style={styles.recordDate}>
-                      <Text>End Date: </Text>
-                      {record.endDate instanceof Timestamp
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        batch.status === "Ivaluate" && styles.completedBadge,
+                      ]}
+                    >
+                      <Text style={styles.statusText}>
+                        {batch.status || "N/A"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.batchDate}>
+                    Start Date:{" "}
+                    {batch.startDate
+                      ? batch.startDate instanceof Timestamp
                         ? format(
-                            record.endDate.toDate(),
+                            batch.startDate.toDate(),
                             "MMMM dd, yyyy hh:mm a"
                           )
-                        : record.endDate?.toString()}
-                    </Text>
-                    <Text style={styles.recordDate}>
-                      Description: {record.description}
-                    </Text>
+                        : batch.startDate instanceof Date
+                        ? format(batch.startDate, "MMMM dd, yyyy hh:mm a")
+                        : "N/A"
+                      : "N/A"}
+                  </Text>
+
+                  <Text style={styles.batchDate}>
+                    End Date:{" "}
+                    {batch.endDate
+                      ? batch.endDate instanceof Timestamp
+                        ? format(
+                            batch.endDate.toDate(),
+                            "MMMM dd, yyyy hh:mm a"
+                          )
+                        : batch.endDate instanceof Date
+                        ? format(batch.endDate, "MMMM dd, yyyy hh:mm a")
+                        : "N/A"
+                      : "N/A"}
+                  </Text>
+
+                  <Text style={styles.batchDate}>
+                    Description: {batch.description || "N/A"}
+                  </Text>
+                </View>
+
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <MaterialCommunityIcons
+                      name="calendar"
+                      size={20}
+                      color="#666"
+                    />
+                    <Text style={styles.statValue}>{batch.duration || 0}</Text>
+                    <Text style={styles.statLabel}>Days Duration</Text>
                   </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      record.status === "Completed"
-                        ? styles.completedBadge
-                        : styles.cancelledBadge,
-                    ]}
-                  >
-                    <Text style={styles.statusText}>{record.status}</Text>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <MaterialCommunityIcons name="egg" size={20} color="#666" />
+                    <Text style={styles.statValue}>{batch.quantity || 0}</Text>
+                    <Text style={styles.statLabel}>Egg Quantity</Text>
                   </View>
                 </View>
 
-                <View style={styles.recordStats}>
-                  <View style={styles.recordStat}>
-                    <MaterialCommunityIcons
-                      name="star"
-                      size={16}
-                      color="#666"
-                    />
-                    <Text
-                      style={
-                        record.rate >= 50
-                          ? styles.rateGreenText
-                          : styles.rateRedText
+                <View style={styles.completionDetails}>
+                  <TouchableOpacity
+                    style={styles.viewDetailsButton}
+                    onPress={() => {
+                      if (batch.id && batch.quantity) {
+                        handleCompletedButton(
+                          batch.id,
+                          batch.quantity,
+                          batch.endDate || new Date()
+                        );
+                      } else {
+                        alert("Set first a new batch to incubate.");
                       }
-                    >
-                      Success Rate: {record.rate.toFixed(2)}%
-                    </Text>
-                  </View>
-
-                  <View style={styles.recordStat}>
-                    <MaterialCommunityIcons
-                      name="egg-outline"
-                      size={16}
-                      color="#666"
-                    />
-                    <Text style={styles.recordStatText}>
-                      Eggs Quantity: {record.quantity}
-                    </Text>
-                  </View>
-
-                  <View style={styles.recordStat}>
-                    <MaterialCommunityIcons name="egg" size={16} color="#666" />
-                    <Text style={styles.recordStatText}>
-                      Success Egg: {record.success}
-                    </Text>
-                  </View>
+                    }}
+                  >
+                    <Text style={styles.viewDetailsText}>Set Action</Text>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
-            ))}
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
 
@@ -805,19 +709,6 @@ export default function RecordsScreen() {
               >
                 <AntDesign name="close" size={24} color="#333" />
               </TouchableOpacity>
-            </View>
-
-            {/* Batch Id */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Batch ID</Text>
-              <TextInput
-                style={styles.input}
-                value={newBatch.batchId}
-                onChangeText={(text) =>
-                  setNewBatch({ ...newBatch, batchId: text })
-                }
-                placeholder="Enter Batch ID"
-              />
             </View>
 
             {/* Discription */}
@@ -859,8 +750,16 @@ export default function RecordsScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.addButton} onPress={handleAddBatch}>
-              <Text style={styles.addButtonText}>Start New Batch</Text>
+            <TouchableOpacity
+              onPress={handleAddBatch}
+              disabled={loading}
+              style={[styles.addButton, loading && { opacity: 0.6 }]}
+            >
+              {loading ? (
+                <Text style={styles.addButtonText}>Loading...</Text>
+              ) : (
+                <Text style={styles.addButtonText}>Start New Batch</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -939,7 +838,7 @@ export default function RecordsScreen() {
               </View>
             </View>
 
-            {latestBatchStatus && (
+            {isBatchReadyToComplete && (
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Number of Success: </Text>
                 <TextInput
@@ -953,7 +852,7 @@ export default function RecordsScreen() {
               </View>
             )}
 
-            {latestBatchStatus && (
+            {isBatchReadyToComplete && (
               <TouchableOpacity
                 style={styles.addButton}
                 onPress={async () => {
@@ -964,17 +863,26 @@ export default function RecordsScreen() {
                   );
                 }}
               >
-                <Text style={styles.addButtonText}>Complete Batch</Text>
+                {loading ? (
+                  <Text style={styles.addButtonText}>Loading...</Text>
+                ) : (
+                  <Text style={styles.addButtonText}>Complete Batch</Text>
+                )}
               </TouchableOpacity>
             )}
-            {!latestBatchStatus && (
+            {!isBatchReadyToComplete && (
               <TouchableOpacity
                 style={styles.addCancelButton}
+                disabled={loading}
                 onPress={async () => {
-                  await handleCancelBatch(selectedBatch.id, "Cancel");
+                  await handleCancelBatch(selectedBatch.id, "Canceled");
                 }}
               >
-                <Text style={styles.addButtonText}>Cancel Batch</Text>
+                {loading ? (
+                  <Text style={styles.addButtonText}>Canceling...</Text>
+                ) : (
+                  <Text style={styles.addButtonText}>Cancel Batch</Text>
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -1039,6 +947,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
+    marginVertical: 10,
   },
   batchHeader: {
     marginBottom: 20,
@@ -1299,5 +1208,31 @@ const styles = StyleSheet.create({
   },
   notifText: {
     color: "#fff",
+  },
+
+  // Notification
+  notificationContainer: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    right: 20,
+    padding: 10,
+    backgroundColor: "#4CAF50", // green
+    borderRadius: 8,
+    alignItems: "center",
+    zIndex: 999,
+  },
+
+  // No data
+
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#999",
+    fontStyle: "italic",
   },
 });

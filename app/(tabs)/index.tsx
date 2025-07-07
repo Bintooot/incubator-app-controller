@@ -1,26 +1,27 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Button,
   Platform,
   ScrollView,
   TouchableOpacity,
-  Switch,
   Alert,
-  Linking,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import axios from "axios";
+import CheckBox from "@/components/CheckBox";
 
-const ESP32_URL_DHT22 = "http://192.168.1.43/sensor";
-const ESP32_IP_MOTOR_1 = "http://192.168.1.53";
+// Setting URL  Connection //
+const URL = "http://192.168.77.103";
+const ESP32_URL_DHT22 = `${URL}/sensor`;
+const ESP32_IP_MOTOR_1 = `${URL}`;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -98,17 +99,6 @@ const lowHumidity = async (expoPushToken: string) => {
   await sendNotification(message);
 };
 
-const lowHumidityAndLowTemp = async (expoPushToken: string) => {
-  const message: Message = {
-    to: expoPushToken,
-    sound: "default",
-    title: "Incubator Alert",
-    body: "The incubator humidity and temperature are both too low!",
-    data: { someData: "lowHumidityAndLowTemp" },
-  };
-  await sendNotification(message);
-};
-
 function handleRegistrationError(errorMessage: string) {
   alert(errorMessage);
   throw new Error(errorMessage);
@@ -157,12 +147,14 @@ async function registerForPushNotificationsAsync() {
     handleRegistrationError("Must use physical device for push notifications");
   }
 }
+
 export default function HomeScreen() {
   const [expoPushToken, setExpoPushToken] = useState("");
   const [data, setData] = useState<{
     temperature: number;
     humidity: number;
   } | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -175,6 +167,88 @@ export default function HomeScreen() {
   });
 
   const [status, setStatus] = useState("Waiting for command...");
+  const [time, setTIme] = useState(new Date());
+
+  //converting into readable string
+
+  const formattedTime = time.toLocaleTimeString();
+
+  //checkbox
+  const options = [
+    { label: "Morning | 8:00 AM", time: "8:00" },
+    { label: "Afternoon | 1:00 PM", time: "13:00" },
+    { label: "Evening | 6:00 PM", time: "18:00" },
+  ];
+
+  const [selected, setSelected] = useState<string[]>([]);
+
+  const toggleOption = (time: string) => {
+    setSelected((prev) =>
+      prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time]
+    );
+  };
+
+  // send time schedule function
+
+  const sendSchedule = async () => {
+    if (selected.length === 0) {
+      Alert.alert("No time selected", "Please select at least one time.");
+      return;
+    }
+
+    try {
+      const selectedTimes = selected.map((timeStr) => {
+        const [hourStr, minuteStr] = timeStr.split(":");
+        return {
+          hour: parseInt(hourStr, 10),
+          minute: parseInt(minuteStr, 10),
+        };
+      });
+
+      // Make sure exactly 3 entries are sent, pad with 0 if fewer
+      while (selectedTimes.length < 3) {
+        selectedTimes.push({ hour: 0, minute: 0 });
+      }
+
+      const byteData = selectedTimes
+        .slice(0, 3)
+        .flatMap(({ hour, minute }) => [hour, minute]);
+
+      const response = await fetch(`http://${URL}/set-schedule`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        body: new Uint8Array(byteData),
+      });
+
+      const resultText = await response.text();
+      Alert.alert("Response", resultText);
+    } catch (error) {
+      Alert.alert("Error", "Failed to send schedule: " + error);
+    }
+  };
+
+  // convert 24h to 12h
+
+  function convertTo12Hour(time24: string): string {
+    const [hourStr, minute] = time24.split(":");
+    let hour = parseInt(hourStr, 10);
+    const ampm = hour >= 12 ? "PM" : "AM";
+
+    hour = hour % 12;
+    if (hour === 0) hour = 12;
+
+    return `${hour}:${minute} ${ampm}`;
+  }
+
+  // coontroller rendering
+
+  const [mode, setMode] = useState(true);
+
+  const changeMode = () => {
+    setMode((prev) => !prev);
+  };
 
   const IDEAL_TEMP_MIN = 37.5;
   const IDEAL_TEMP_MAX = 38.5;
@@ -212,12 +286,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleLinkPress = () => {
-    Linking.openURL(`${ESP32_IP_MOTOR_1}`).catch((err) =>
-      console.error("Failed to open URL:", err)
-    );
-  };
-
   const motorControl = async (position: string) => {
     if (disableButton) return;
     try {
@@ -229,14 +297,6 @@ export default function HomeScreen() {
         setDisableButton(true);
         setUpperStepperPosition("right");
         rotateMotorRight();
-      } else if (position === "left45") {
-        setDisableButton(true);
-        setUpperStepperPosition("left45");
-        rotateMotorLeft45();
-      } else if (position === "right45") {
-        setDisableButton(true);
-        setUpperStepperPosition("right45");
-        rotateMotorRight45();
       } else if (position === "restart") {
         setDisableButton(true);
         restartMotor();
@@ -267,18 +327,6 @@ export default function HomeScreen() {
     setLoading(false);
   };
 
-  const rotateMotorLeft45 = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${ESP32_IP_MOTOR_1}/left45`);
-      setStatus(response.data);
-      console.log("Motor rotated left 45 degrees:", response.data);
-    } catch (error) {
-      console.error("Error in motor control:", error);
-      Alert.alert("Error", "Failed to control motor");
-    }
-  };
-
   const rotateMotorRight = async () => {
     setLoading(true);
     try {
@@ -292,18 +340,6 @@ export default function HomeScreen() {
       Alert.alert("Error", "Failed to rotate motor");
     }
     setLoading(false);
-  };
-
-  const rotateMotorRight45 = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${ESP32_IP_MOTOR_1}/right45`);
-      setStatus(response.data);
-      console.log("Motor rotated left 45 degrees:", response.data);
-    } catch (error) {
-      console.error("Error in motor control:", error);
-      Alert.alert("Error", "Failed to control motor");
-    }
   };
 
   const restartMotor = async () => {
@@ -329,10 +365,12 @@ export default function HomeScreen() {
 
       checkConditions(data.temperature, data.humidity, expoPushToken);
 
-      setLoading(false); // Set loading to false after fetching
+      console.log(data.temperature, data.humidity, expoPushToken);
+
+      setLoading(false);
     } catch (err) {
-      setError("Error fetching data"); // Set error message if something goes wrong
-      setLoading(false); // Set loading to false after error
+      setError("Error fetching data");
+      setLoading(false);
     }
   };
 
@@ -344,6 +382,15 @@ export default function HomeScreen() {
     }, 3000);
 
     return () => clearInterval(intervalId);
+  }, []);
+
+  //fetch real-time
+  useEffect(() => {
+    const timeInterval = setInterval(() => {
+      setTIme(new Date());
+    }, 1000);
+
+    return () => clearInterval(timeInterval);
   }, []);
 
   useEffect(() => {
@@ -429,175 +476,161 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      <View style={styles.modeSwitcherContainer}>
+        <Text style={styles.time}>{formattedTime}</Text>
+
+        <TouchableOpacity style={styles.switchButton} onPress={changeMode}>
+          <Text style={styles.switchButtonText}>
+            Switch to {mode ? "Manual" : "Schedule"} Mode
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Stepper Motor Control */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons
-            name="rotate-3d-variant"
-            size={24}
-            color="#4c669f"
-          />
-          <Text style={styles.sectionTitle}>Stepper Motor Control</Text>
-        </View>
+        {!mode && (
+          <>
+            <View style={styles.sectionHeader}>
+              <MaterialCommunityIcons
+                name="rotate-3d-variant"
+                size={24}
+                color="#4c669f"
+              />
+              <Text style={styles.sectionTitle}>Stepper Motor Control</Text>
+            </View>
 
-        <View style={styles.section}>
-          <View style={styles.notficationBackground}>
-            <Text style={styles.aveSensorNotfication}>{status}</Text>
-          </View>
-        </View>
-
-        <View style={styles.stepperCard}>
-          <View style={styles.stepperVisual}>
-            <Text style={styles.motorTitle}>Upper Motor</Text>
-          </View>
-
-          <View style={styles.buttonLayout}>
-            {/* Left Direction */}
-            <View style={styles.buttonWidth}>
-              <Text style={styles.textCenter}>Left</Text>
-              <View>
-                <TouchableOpacity
-                  style={[
-                    styles.stepperButton,
-                    upperStepperPosition === "left" &&
-                      styles.activeStepperButton,
-                  ]}
-                  onPress={() => motorControl("left")}
-                  disabled={disableButton}
-                >
-                  <MaterialCommunityIcons
-                    name="rotate-left"
-                    size={24}
-                    color={
-                      upperStepperPosition === "left" ? "white" : "#4c669f"
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.stepperButtonText,
-                      upperStepperPosition === "left" &&
-                        styles.activeStepperButtonText,
-                    ]}
-                  >
-                    90° Left
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.stepperButton,
-                    upperStepperPosition === "left45" &&
-                      styles.activeStepperButton,
-                  ]}
-                  onPress={() => motorControl("left45")}
-                  disabled={disableButton}
-                >
-                  <MaterialCommunityIcons
-                    name="rotate-left"
-                    size={24}
-                    color={
-                      upperStepperPosition === "left45" ? "white" : "#4c669f"
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.stepperButtonText,
-                      upperStepperPosition === "left45" &&
-                        styles.activeStepperButtonText,
-                    ]}
-                  >
-                    45° Left
-                  </Text>
-                </TouchableOpacity>
+            <View style={styles.section}>
+              <View style={styles.notficationBackground}>
+                <Text style={styles.aveSensorNotfication}>{status}</Text>
               </View>
             </View>
 
-            {/* Right Direction */}
-            <View style={styles.buttonWidth}>
-              <Text style={styles.textCenter}>Right</Text>
-              <View>
-                <TouchableOpacity
-                  style={[
-                    styles.stepperButton,
-                    upperStepperPosition === "right" &&
-                      styles.activeStepperButton,
-                  ]}
-                  onPress={() => motorControl("right")}
-                  disabled={disableButton}
-                >
-                  <MaterialCommunityIcons
-                    name="rotate-right"
-                    size={24}
-                    color={
-                      upperStepperPosition === "right" ? "white" : "#4c669f"
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.stepperButtonText,
-                      upperStepperPosition === "right" &&
-                        styles.activeStepperButtonText,
-                    ]}
-                  >
-                    90° Right
-                  </Text>
-                </TouchableOpacity>
+            <View style={styles.stepperCard}>
+              <View style={styles.buttonLayout}>
+                {/* Left Direction */}
+                <View style={styles.buttonWidth}>
+                  <Text style={styles.textCenter}>Left</Text>
+                  <View>
+                    <TouchableOpacity
+                      style={[
+                        styles.stepperButton,
+                        upperStepperPosition === "left" &&
+                          styles.activeStepperButton,
+                      ]}
+                      onPress={() => motorControl("left")}
+                      disabled={disableButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="rotate-left"
+                        size={24}
+                        color={
+                          upperStepperPosition === "left" ? "white" : "#4c669f"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.stepperButtonText,
+                          upperStepperPosition === "left" &&
+                            styles.activeStepperButtonText,
+                        ]}
+                      >
+                        90° Left
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
+                {/* Right Direction */}
+                <View style={styles.buttonWidth}>
+                  <Text style={styles.textCenter}>Right</Text>
+                  <View>
+                    <TouchableOpacity
+                      style={[
+                        styles.stepperButton,
+                        upperStepperPosition === "right" &&
+                          styles.activeStepperButton,
+                      ]}
+                      onPress={() => motorControl("right")}
+                      disabled={disableButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="rotate-right"
+                        size={24}
+                        color={
+                          upperStepperPosition === "right" ? "white" : "#4c669f"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.stepperButtonText,
+                          upperStepperPosition === "right" &&
+                            styles.activeStepperButtonText,
+                        ]}
+                      >
+                        90° Right
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {!disableButton && (
                 <TouchableOpacity
-                  style={[
-                    styles.stepperButton,
-                    upperStepperPosition === "right45" &&
-                      styles.activeStepperButton,
-                  ]}
-                  onPress={() => motorControl("right45")}
+                  style={styles.restartButton}
+                  onPress={() => motorControl("restart")}
                   disabled={disableButton}
                 >
-                  <MaterialCommunityIcons
-                    name="rotate-right"
-                    size={24}
-                    color={
-                      upperStepperPosition === "right45" ? "white" : "#4c669f"
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.stepperButtonText,
-                      upperStepperPosition === "right45" &&
-                        styles.activeStepperButtonText,
-                    ]}
-                  >
-                    45° Right
-                  </Text>
+                  <Text style={styles.restartText}>Restart Motor</Text>
                 </TouchableOpacity>
-              </View>
+              )}
+            </View>
+          </>
+        )}
+      </View>
+
+      {mode && (
+        <>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <MaterialIcons name="schedule" size={24} color="#4c669f" />
+              <Text style={styles.sectionTitle}>Tilting Schedule</Text>
+            </View>
+
+            <View style={styles.selectedGridContainer}>
+              {selected.length > 0 ? (
+                selected.map((time, index) => (
+                  <View key={index} style={styles.selectedGridItem}>
+                    <Text style={styles.selectedGridText}>
+                      {convertTo12Hour(time)}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.selectedEmpty}>No schedule selected</Text>
+              )}
+            </View>
+
+            <View style={{ padding: 20 }}>
+              {options.map((option, index) => (
+                <CheckBox
+                  key={index}
+                  label={option.label}
+                  checked={selected.includes(option.time)}
+                  onToggle={() => toggleOption(option.time)}
+                />
+              ))}
+              <TouchableOpacity
+                style={styles.setScheduleButton}
+                onPress={sendSchedule}
+              >
+                <Text style={styles.setScheduleButtonText}>
+                  Set time schedule
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
-          {!disableButton && (
-            <TouchableOpacity
-              style={styles.restartButton}
-              onPress={() => motorControl("restart")}
-              disabled={disableButton}
-            >
-              <Text style={styles.restartText}>Restart Motor</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name="monitor" size={24} color="#4c669f" />
-          <Text style={styles.sectionTitle}>Website View Controller</Text>
-        </View>
-        <View style={styles.stepperCard}>
-          <Text>
-            Click the link:{" "}
-            <TouchableOpacity onPress={handleLinkPress}>
-              <Text style={{ color: "blue" }}>{ESP32_IP_MOTOR_1}</Text>
-            </TouchableOpacity>
-          </Text>
-        </View>
-      </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -606,6 +639,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f5f5f5",
+  },
+  time: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#333",
   },
   headerGradient: {
     paddingTop: 60,
@@ -734,7 +772,6 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 20,
@@ -825,13 +862,109 @@ const styles = StyleSheet.create({
   },
   restartButton: {
     backgroundColor: "#bf0000",
-    padding: 10,
     marginTop: 20,
-    borderRadius: 5,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   restartText: {
     color: "white",
     fontSize: 16,
+  },
+
+  // switcher
+
+  modeSwitcherContainer: {
+    padding: 16,
+    marginHorizontal: 20,
+    backgroundColor: "#f5f7fa",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    alignItems: "center",
+  },
+
+  switchButton: {
+    marginTop: 10,
+    backgroundColor: "#4c669f",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+
+  switchButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  setScheduleButton: {
+    marginTop: 20,
+    backgroundColor: "#28a745",
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  setScheduleButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textAlign: "center",
+  },
+
+  // Style for Tilting Schedule
+
+  selectedGridContainer: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: "#4c669f",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "center",
+  },
+
+  selectedGridItem: {
+    width: "30%",
+    backgroundColor: "#eaf0f9",
+    paddingVertical: 10,
+    marginVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
+  selectedGridText: {
+    color: "#4c669f",
+    fontWeight: "600",
+  },
+
+  selectedEmpty: {
+    fontSize: 14,
+    color: "#4c669f",
+    backgroundColor: "#eaf0f9",
+    padding: 10,
+    borderRadius: 8,
+    textAlign: "center",
   },
 });

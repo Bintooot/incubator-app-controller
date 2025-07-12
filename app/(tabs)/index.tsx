@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import axios from "axios";
 import CheckBox from "@/components/CheckBox";
 
 // Setting URL  Connection //
-const URL = "http://192.168.77.103";
+const URL = "http://192.168.1.54";
 const ESP32_URL_DHT22 = `${URL}/sensor`;
 const ESP32_IP_MOTOR_1 = `${URL}`;
 
@@ -181,6 +181,9 @@ export default function HomeScreen() {
   ];
 
   const [selected, setSelected] = useState<string[]>([]);
+  const [schedule, setSchedule] = useState<string[]>([]);
+
+  const [currentSchedule, setCurrentSchedule] = useState<string[]>([]);
 
   const toggleOption = (time: string) => {
     setSelected((prev) =>
@@ -188,16 +191,60 @@ export default function HomeScreen() {
     );
   };
 
-  // send time schedule function
+  const fetchSchedule = async () => {
+    try {
+      const response = await axios.get(`${URL}/get-schedule`);
+      setCurrentSchedule(response.data.schedule);
+    } catch (error: unknown) {
+      let errorMessage = "Unknown error";
+      if (error instanceof Error) errorMessage = error.message;
+      Alert.alert("Error", "Failed to fetch schedule: " + errorMessage);
+    }
+  };
 
+  useEffect(() => {
+    fetchSchedule();
+  }, []);
+
+  // reset schedule time
+  const resetSchedule = async () => {
+    try {
+      const response = await fetch(`${URL}/reset-schedule`, {
+        method: "POST",
+      });
+      const resultText = await response.text();
+      setSchedule([]); // Clear schedule state so checkboxes reappear
+      setSelected([]); // Clear selections
+      setCurrentSchedule([]);
+      Alert.alert("Reset", resultText);
+    } catch (error: unknown) {
+      let errorMessage = "Unknown error";
+      if (error instanceof Error) errorMessage = error.message;
+      Alert.alert("Error", "Failed to reset schedule: " + errorMessage);
+    }
+  };
+
+  // send time schedule function
   const sendSchedule = async () => {
-    if (selected.length === 0) {
+    // Validate user selection
+    const validSelected = selected.filter((time) => time !== "00:00");
+
+    if (validSelected.length === 0) {
       Alert.alert("No time selected", "Please select at least one time.");
       return;
     }
 
+    if (validSelected.length > 3) {
+      Alert.alert(
+        "Too many times",
+        "Please select only up to 3 schedule times."
+      );
+      return;
+    }
+
     try {
-      const selectedTimes = selected.map((timeStr) => {
+      // Convert time strings to hour/minute format
+      const selectedTimes = validSelected.map((timeStr) => {
         const [hourStr, minuteStr] = timeStr.split(":");
         return {
           hour: parseInt(hourStr, 10),
@@ -205,16 +252,13 @@ export default function HomeScreen() {
         };
       });
 
-      // Make sure exactly 3 entries are sent, pad with 0 if fewer
-      while (selectedTimes.length < 3) {
-        selectedTimes.push({ hour: 0, minute: 0 });
-      }
+      // Convert to byte array
+      const byteData = selectedTimes.flatMap(({ hour, minute }) => [
+        hour,
+        minute,
+      ]);
 
-      const byteData = selectedTimes
-        .slice(0, 3)
-        .flatMap(({ hour, minute }) => [hour, minute]);
-
-      const response = await fetch(`http://${URL}/set-schedule`, {
+      const response = await fetch(`${URL}/set-schedule`, {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
@@ -223,9 +267,21 @@ export default function HomeScreen() {
       });
 
       const resultText = await response.text();
-      Alert.alert("Response", resultText);
-    } catch (error) {
-      Alert.alert("Error", "Failed to send schedule: " + error);
+
+      // Extract clean non-empty, non-0:00 schedule from ESP response
+      const times = resultText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && line !== "0:00" && line !== "--:--");
+
+      setSchedule(times);
+      fetchSchedule();
+
+      Alert.alert("Schedule Set", resultText);
+    } catch (error: unknown) {
+      let errorMessage = "Unknown error";
+      if (error instanceof Error) errorMessage = error.message;
+      Alert.alert("Error", "Failed to send schedule: " + errorMessage);
     }
   };
 
@@ -254,35 +310,59 @@ export default function HomeScreen() {
   const IDEAL_TEMP_MAX = 38.5;
   const IDEAL_HUMIDITY_MIN = 50;
 
+  const lastCondition = useRef<string | null>(null);
+
   const checkConditions = async (
     temperature: number,
     humidity: number,
     expoPushToken: string
   ) => {
+    let currentCondition = "";
+
     if (temperature < IDEAL_TEMP_MIN) {
-      setNotification({
-        type: "low",
-        message: "Temperature is too low!",
-      });
-      await lowTemperature(expoPushToken);
+      currentCondition = "low-temp";
     } else if (temperature > IDEAL_TEMP_MAX) {
-      setNotification({
-        type: "high",
-        message: "Temperature is too high!",
-      });
-      await highTemperature(expoPushToken);
+      currentCondition = "high-temp";
     } else if (humidity < IDEAL_HUMIDITY_MIN) {
-      setNotification({
-        type: "low",
-        message: "Humidity is too low!",
-      });
-      await lowHumidity(expoPushToken);
+      currentCondition = "low-humidity";
     } else {
-      setNotification({
-        type: "average",
-        message: "Temperature and humidity are within the ideal range!",
-      });
-      await sendIdealConditionsNotification(expoPushToken);
+      currentCondition = "ideal";
+    }
+
+    // Only notify if condition has changed
+    if (lastCondition.current !== currentCondition) {
+      lastCondition.current = currentCondition;
+
+      switch (currentCondition) {
+        case "low-temp":
+          setNotification({
+            type: "low",
+            message: "Temperature is too low!",
+          });
+          await lowTemperature(expoPushToken);
+          break;
+        case "high-temp":
+          setNotification({
+            type: "high",
+            message: "Temperature is too high!",
+          });
+          await highTemperature(expoPushToken);
+          break;
+        case "low-humidity":
+          setNotification({
+            type: "low",
+            message: "Humidity is too low!",
+          });
+          await lowHumidity(expoPushToken);
+          break;
+        case "ideal":
+          setNotification({
+            type: "average",
+            message: "Temperature and humidity are within the ideal range!",
+          });
+          await sendIdealConditionsNotification(expoPushToken);
+          break;
+      }
     }
   };
 
@@ -379,7 +459,7 @@ export default function HomeScreen() {
 
     const intervalId = setInterval(() => {
       getSensorData();
-    }, 3000);
+    }, 1000);
 
     return () => clearInterval(intervalId);
   }, []);
@@ -589,47 +669,72 @@ export default function HomeScreen() {
       </View>
 
       {mode && (
-        <>
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="schedule" size={24} color="#4c669f" />
-              <Text style={styles.sectionTitle}>Tilting Schedule</Text>
-            </View>
+        <View style={styles.section}>
+          {/* 🟦 Header */}
+          <View style={styles.sectionHeader}>
+            <MaterialIcons name="schedule" size={24} color="#4c669f" />
+            <Text style={styles.sectionTitle}>Tilting Schedule</Text>
+          </View>
 
-            <View style={styles.selectedGridContainer}>
-              {selected.length > 0 ? (
-                selected.map((time, index) => (
-                  <View key={index} style={styles.selectedGridItem}>
-                    <Text style={styles.selectedGridText}>
-                      {convertTo12Hour(time)}
-                    </Text>
-                  </View>
-                ))
-              ) : (
+          {/* 🟩 Schedule Display */}
+          <View style={styles.selectedGridContainer}>
+            {(selected.length > 0 ? selected : currentSchedule || []).map(
+              (time, index) => (
+                <View key={index} style={styles.selectedGridItem}>
+                  <Text style={styles.selectedGridText}>
+                    {convertTo12Hour(time)}
+                  </Text>
+                </View>
+              )
+            )}
+
+            {/* 🟥 Empty message */}
+            {(!currentSchedule || currentSchedule.every((t) => !t)) &&
+              selected.length === 0 && (
                 <Text style={styles.selectedEmpty}>No schedule selected</Text>
               )}
-            </View>
-
-            <View style={{ padding: 20 }}>
-              {options.map((option, index) => (
-                <CheckBox
-                  key={index}
-                  label={option.label}
-                  checked={selected.includes(option.time)}
-                  onToggle={() => toggleOption(option.time)}
-                />
-              ))}
-              <TouchableOpacity
-                style={styles.setScheduleButton}
-                onPress={sendSchedule}
-              >
-                <Text style={styles.setScheduleButtonText}>
-                  Set time schedule
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        </>
+
+          {/* 🟧 Action Controls */}
+          <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
+            {!currentSchedule || currentSchedule.every((t) => !t) ? (
+              <>
+                <View>
+                  {options.map((option, index) => (
+                    <CheckBox
+                      key={index}
+                      label={option.label}
+                      checked={selected.includes(option.time)}
+                      onToggle={() => toggleOption(option.time)}
+                    />
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.setScheduleButton}
+                  onPress={sendSchedule}
+                >
+                  <Text style={styles.setScheduleButtonText}>
+                    Set Time Schedule
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+
+            {/* 🟥 Reset button */}
+            {currentSchedule && currentSchedule.some((t) => t) && (
+              <TouchableOpacity
+                style={[
+                  styles.setScheduleButton,
+                  { backgroundColor: "red", marginTop: 10 },
+                ]}
+                onPress={resetSchedule}
+              >
+                <Text style={styles.setScheduleButtonText}>Reset Schedule</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       )}
     </ScrollView>
   );

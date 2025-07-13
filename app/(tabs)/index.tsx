@@ -19,7 +19,7 @@ import axios from "axios";
 import CheckBox from "@/components/CheckBox";
 
 // Setting URL  Connection //
-const URL = "http://192.168.1.54";
+const URL = "http://192.168.1.49";
 const ESP32_URL_DHT22 = `${URL}/sensor`;
 const ESP32_IP_MOTOR_1 = `${URL}`;
 
@@ -198,7 +198,11 @@ export default function HomeScreen() {
     } catch (error: unknown) {
       let errorMessage = "Unknown error";
       if (error instanceof Error) errorMessage = error.message;
-      Alert.alert("Error", "Failed to fetch schedule: " + errorMessage);
+      Alert.alert(
+        "Error",
+        "Failed to fetch schedule connection might disconnected: " +
+          errorMessage
+      );
     }
   };
 
@@ -234,9 +238,9 @@ export default function HomeScreen() {
       return;
     }
 
-    if (validSelected.length > 3) {
+    if (validSelected.length < 3) {
       Alert.alert(
-        "Too many times",
+        "Invalid Payload",
         "Please select only up to 3 schedule times."
       );
       return;

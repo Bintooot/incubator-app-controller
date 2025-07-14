@@ -19,8 +19,6 @@ export default function ESP32ProvisioningScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const espIp = "http://192.168.4.1";
-
   const connectToESP32 = async () => {
     if (!ssid || !password) {
       Alert.alert("Error", "Please enter both SSID and Password.");
@@ -31,7 +29,7 @@ export default function ESP32ProvisioningScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${espIp}/set-credentials`, {
+      const response = await fetch("http://192.168.4.1/set-credentials", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

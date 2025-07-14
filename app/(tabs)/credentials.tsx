@@ -27,7 +27,7 @@ export default function ESP32ProvisioningScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`http://${espIp}/connect`, {
+      const response = await fetch(`${espIp}/connect`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

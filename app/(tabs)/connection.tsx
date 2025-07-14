@@ -25,11 +25,10 @@ export default function ESP32ProvisioningScreen() {
       return;
     }
 
-    Alert.alert(ssid, password);
-
     setLoading(true);
+
     try {
-      const response = await fetch("http://192.168.4.1/set-credentials", {
+      const response = await fetch("http://192.168.4.1/credentials", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -69,7 +68,9 @@ export default function ESP32ProvisioningScreen() {
           <MaterialIcons name="wifi" size={64} color="#4c669f" />
           <Text style={styles.title}>Connect to ESP32</Text>
           <Text style={styles.subtitle}>Enter Wi-Fi Credentials</Text>
-
+          <Text>
+            {ssid}, {password}
+          </Text>
           <TextInput
             placeholder="Wi-Fi SSID"
             value={ssid}

@@ -19,13 +19,15 @@ export default function ESP32ProvisioningScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const espIp = "192.168.4.1";
+  const espIp = "http://192.168.4.1";
 
   const connectToESP32 = async () => {
     if (!ssid || !password) {
       Alert.alert("Error", "Please enter both SSID and Password.");
       return;
     }
+
+    Alert.alert(ssid, password);
 
     setLoading(true);
     try {
@@ -37,16 +39,22 @@ export default function ESP32ProvisioningScreen() {
         body: JSON.stringify({ ssid, password }),
       });
 
-      const resultJson = await response.json(); // not `.text()` anymore
-      const ip = resultJson.ip;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const resultJson = await response.json();
+      const ip = resultJson?.ip;
 
       if (ip) {
-        await AsyncStorage.setItem("esp32_ip", ip); // save it
+        await AsyncStorage.setItem("esp32_ip", ip);
         Alert.alert("Success", `ESP32 connected. IP: ${ip}`);
       } else {
         Alert.alert("Error", "No IP returned from ESP32.");
       }
     } catch (error) {
+      console.error("Connection error:", error);
       Alert.alert("Connection Failed", "Could not reach ESP32: " + error);
     } finally {
       setLoading(false);

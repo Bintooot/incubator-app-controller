@@ -19,7 +19,7 @@ import axios from "axios";
 import CheckBox from "@/components/CheckBox";
 
 // Setting URL  Connection //
-const URL = "http://192.168.1.49";
+const URL = "http://192.168.1.53";
 const ESP32_URL_DHT22 = `${URL}/sensor`;
 const ESP32_IP_MOTOR_1 = `${URL}`;
 
@@ -177,7 +177,7 @@ export default function HomeScreen() {
   const options = [
     { label: "Morning | 8:00 AM", time: "8:00" },
     { label: "Afternoon | 1:00 PM", time: "13:00" },
-    { label: "Evening | 6:00 PM", time: "18:00" },
+    { label: "Evening | 6:00 PM", time: "19:33" },
   ];
 
   const [selected, setSelected] = useState<string[]>([]);
@@ -660,7 +660,10 @@ export default function HomeScreen() {
 
               {!disableButton && (
                 <TouchableOpacity
-                  style={styles.restartButton}
+                  style={[
+                    styles.setScheduleButton,
+                    { backgroundColor: "red", marginTop: 10 },
+                  ]}
                   onPress={() => motorControl("restart")}
                   disabled={disableButton}
                 >

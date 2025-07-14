@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 
+import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function ESP32ProvisioningScreen() {
@@ -28,31 +29,42 @@ export default function ESP32ProvisioningScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://192.168.4.1/credentials", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ssid, password }),
-      });
+      // Force JSON.stringify to avoid any serialization issues
+      const response = await axios.post(
+        "http://192.168.4.1/credentials",
+        JSON.stringify({ ssid, password }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          timeout: 5000, // Optional: Set timeout in case of ESP32 hang
+        }
+      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      const { data, status } = response;
+
+      if (status !== 200) {
+        throw new Error(`HTTP ${status}: ${JSON.stringify(data)}`);
       }
 
-      const resultJson = await response.json();
-      const ip = resultJson?.ip;
-
+      const ip = data.ip;
       if (ip) {
         await AsyncStorage.setItem("esp32_ip", ip);
         Alert.alert("Success", `ESP32 connected. IP: ${ip}`);
       } else {
         Alert.alert("Error", "No IP returned from ESP32.");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Connection error:", error);
-      Alert.alert("Connection Failed", "Could not reach ESP32: " + error);
+
+      let message = "An unknown error occurred.";
+      if (axios.isAxiosError(error) && error.response) {
+        message = `ESP32 responded with error: ${error.response.status}`;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+
+      Alert.alert("Connection Failed", message);
     } finally {
       setLoading(false);
     }

@@ -1,114 +1,44 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
+  Linking,
   Alert,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 
-import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 export default function ESP32ProvisioningScreen() {
-  const [ssid, setSsid] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const connectToESP32 = async () => {
-    if (!ssid || !password) {
-      Alert.alert("Error", "Please enter both SSID and Password.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Force JSON.stringify to avoid any serialization issues
-      const response = await axios.post(
-        "http://192.168.4.1/credentials",
-        JSON.stringify({ ssid, password }),
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          timeout: 5000, // Optional: Set timeout in case of ESP32 hang
-        }
-      );
-
-      const { data, status } = response;
-
-      if (status !== 200) {
-        throw new Error(`HTTP ${status}: ${JSON.stringify(data)}`);
-      }
-
-      const ip = data.ip;
-      if (ip) {
-        await AsyncStorage.setItem("esp32_ip", ip);
-        Alert.alert("Success", `ESP32 connected. IP: ${ip}`);
-      } else {
-        Alert.alert("Error", "No IP returned from ESP32.");
-      }
-    } catch (error: unknown) {
-      console.error("Connection error:", error);
-
-      let message = "An unknown error occurred.";
-      if (axios.isAxiosError(error) && error.response) {
-        message = `ESP32 responded with error: ${error.response.status}`;
-      } else if (error instanceof Error) {
-        message = error.message;
-      }
-
-      Alert.alert("Connection Failed", message);
-    } finally {
-      setLoading(false);
+  const openESP32Page = async () => {
+    const url = "http://192.168.4.1";
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      Linking.openURL(url);
+    } else {
+      Alert.alert("Error", "Unable to open the ESP32 provisioning page.");
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.card}>
-          <MaterialIcons name="wifi" size={64} color="#4c669f" />
-          <Text style={styles.title}>Connect to ESP32</Text>
-          <Text style={styles.subtitle}>Enter Wi-Fi Credentials</Text>
-          <Text>
-            {ssid}, {password}
-          </Text>
-          <TextInput
-            placeholder="Wi-Fi SSID"
-            value={ssid}
-            onChangeText={setSsid}
-            style={styles.input}
-          />
-          <TextInput
-            placeholder="Wi-Fi Password"
-            value={password}
-            onChangeText={setPassword}
-            style={styles.input}
-            secureTextEntry
-          />
+    <View style={styles.container}>
+      <View style={styles.card}>
+        <MaterialIcons name="wifi" size={64} color="#4c669f" />
+        <Text style={styles.title}>ESP32 Setup</Text>
+        <Text style={styles.subtitle}>
+          1. Connect to Wi-Fi named{" "}
+          <Text style={styles.bold}>ESP32_Config</Text>
+        </Text>
+        <Text style={styles.subtitle}>
+          2. Tap the button below to open the setup page
+        </Text>
 
-          <TouchableOpacity
-            onPress={connectToESP32}
-            style={styles.button}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>
-              {loading ? "Connecting..." : "Connect"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        <TouchableOpacity onPress={openESP32Page} style={styles.button}>
+          <Text style={styles.buttonText}>Open Provisioning Page</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -116,9 +46,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f5f5f5",
-  },
-  scrollContainer: {
-    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -144,18 +71,15 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: "#666",
-    marginBottom: 20,
+    marginVertical: 8,
+    textAlign: "center",
   },
-  input: {
-    width: "100%",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    fontSize: 16,
+  bold: {
+    fontWeight: "bold",
+    color: "#000",
   },
   button: {
+    marginTop: 24,
     backgroundColor: "#4c669f",
     paddingVertical: 14,
     paddingHorizontal: 24,

@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 export default function ESP32ProvisioningScreen() {
   const [ssid, setSsid] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +29,7 @@ export default function ESP32ProvisioningScreen() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${espIp}/connect`, {
+      const response = await fetch(`${espIp}/set-credentials`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -35,8 +37,15 @@ export default function ESP32ProvisioningScreen() {
         body: JSON.stringify({ ssid, password }),
       });
 
-      const result = await response.text();
-      Alert.alert("Response", result);
+      const resultJson = await response.json(); // not `.text()` anymore
+      const ip = resultJson.ip;
+
+      if (ip) {
+        await AsyncStorage.setItem("esp32_ip", ip); // save it
+        Alert.alert("Success", `ESP32 connected. IP: ${ip}`);
+      } else {
+        Alert.alert("Error", "No IP returned from ESP32.");
+      }
     } catch (error) {
       Alert.alert("Connection Failed", "Could not reach ESP32: " + error);
     } finally {

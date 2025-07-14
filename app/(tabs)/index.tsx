@@ -18,10 +18,7 @@ import Constants from "expo-constants";
 import axios from "axios";
 import CheckBox from "@/components/CheckBox";
 
-// Setting URL  Connection //
-const URL = "http://192.168.1.53";
-const ESP32_URL_DHT22 = `${URL}/sensor`;
-const ESP32_IP_MOTOR_1 = `${URL}`;
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -149,6 +146,13 @@ async function registerForPushNotificationsAsync() {
 }
 
 export default function HomeScreen() {
+  const [esp32Ip, setEsp32Ip] = useState<string | null>(null);
+
+  // Setting URL  Connection //
+  const URL = esp32Ip ? `http://${esp32Ip}` : null;
+  const ESP32_URL_DHT22 = `${URL}/sensor`;
+  const ESP32_IP_MOTOR_1 = `${URL}`;
+
   const [expoPushToken, setExpoPushToken] = useState("");
   const [data, setData] = useState<{
     temperature: number;
@@ -177,7 +181,7 @@ export default function HomeScreen() {
   const options = [
     { label: "Morning | 8:00 AM", time: "8:00" },
     { label: "Afternoon | 1:00 PM", time: "13:00" },
-    { label: "Evening | 6:00 PM", time: "19:33" },
+    { label: "Evening | 6:00 PM", time: "18:00" },
   ];
 
   const [selected, setSelected] = useState<string[]>([]);
@@ -189,6 +193,15 @@ export default function HomeScreen() {
     setSelected((prev) =>
       prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time]
     );
+  };
+
+  const loadIp = async () => {
+    const savedIp = await AsyncStorage.getItem("esp32_ip");
+    if (savedIp) {
+      setEsp32Ip(savedIp);
+    } else {
+      Alert.alert("Error", "ESP32 IP not found. Please connect first.");
+    }
   };
 
   const fetchSchedule = async () => {
@@ -207,6 +220,7 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
+    loadIp();
     fetchSchedule();
   }, []);
 

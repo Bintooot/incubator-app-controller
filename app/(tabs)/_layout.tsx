@@ -33,9 +33,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="credentials"
+        name="connection"
         options={{
-          title: "CREDENTIALS",
+          title: "CONNECTION",
           tabBarIcon: () => (
             <MaterialCommunityIcons
               name="connection"

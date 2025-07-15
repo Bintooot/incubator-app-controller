@@ -1,5 +1,5 @@
 {
-  "expo": {   
+  "expo": {
     "name": "App-Controller",
     "slug": "app-controller",
     "version": "1.0.0",
@@ -21,7 +21,10 @@
       }
     },
     "android": {
-      "permissions": ["INTERNET"],
+      "permissions": [
+        "INTERNET",
+        "INTERNET"
+      ],
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -34,6 +37,12 @@
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
+    },
+    "updates": {
+      "enabled": true,
+         "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/7ffa0f73-af0d-4a35-94d2-329a38f14af3"
     },
     "plugins": [
       "expo-router",
@@ -50,6 +59,9 @@
         "projectId": "7ffa0f73-af0d-4a35-94d2-329a38f14af3"
       }
     },
-    "owner": "ben0998"
+    "owner": "ben0998",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

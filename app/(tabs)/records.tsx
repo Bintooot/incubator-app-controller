@@ -7,6 +7,7 @@ import {
   Modal,
   TextInput,
   Platform,
+  ActivityIndicator,
   Button,
 } from "react-native";
 import { MaterialCommunityIcons, AntDesign } from "@expo/vector-icons";
@@ -756,7 +757,7 @@ export default function RecordsScreen() {
               style={[styles.addButton, loading && { opacity: 0.6 }]}
             >
               {loading ? (
-                <Text style={styles.addButtonText}>Loading...</Text>
+                <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.addButtonText}>Start New Batch</Text>
               )}
@@ -864,7 +865,7 @@ export default function RecordsScreen() {
                 }}
               >
                 {loading ? (
-                  <Text style={styles.addButtonText}>Loading...</Text>
+                  <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.addButtonText}>Complete Batch</Text>
                 )}
@@ -879,7 +880,7 @@ export default function RecordsScreen() {
                 }}
               >
                 {loading ? (
-                  <Text style={styles.addButtonText}>Canceling...</Text>
+                  <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.addButtonText}>Cancel Batch</Text>
                 )}

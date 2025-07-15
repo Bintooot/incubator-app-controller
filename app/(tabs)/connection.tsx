@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,10 +7,16 @@ import {
   Linking,
   Alert,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
 export default function ESP32ProvisioningScreen() {
+  const [loading, setLoading] = useState(false);
+  const [hasPolled, setHasPolled] = useState(false);
+
   const openESP32Page = async () => {
     const url = "http://192.168.4.1";
     const supported = await Linking.canOpenURL(url);
@@ -20,6 +26,43 @@ export default function ESP32ProvisioningScreen() {
       Alert.alert("Error", "Unable to open the ESP32 provisioning page.");
     }
   };
+
+  const pollESP32ForIp = async () => {
+    setLoading(true);
+    const maxAttempts = 10;
+    let attempts = 0;
+    let ip = null;
+
+    while (attempts < maxAttempts) {
+      try {
+        const res = await axios.get("http://192.168.4.1/ip");
+        if (res.data && res.data.ip && res.data.ip !== "not_connected") {
+          ip = res.data.ip;
+          break;
+        }
+      } catch (err) {
+        console.log(`Attempt ${attempts + 1}:`, (err as any).message);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      attempts++;
+    }
+
+    setLoading(false);
+
+    if (ip) {
+      await AsyncStorage.setItem("esp32_ip", ip);
+      Alert.alert("Success", `ESP32 connected to: ${ip}`);
+    } else {
+      Alert.alert("Failed", "ESP32 did not connect. Please try again.");
+    }
+  };
+
+  useEffect(() => {
+    if (!hasPolled) {
+      pollESP32ForIp();
+      setHasPolled(true);
+    }
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -36,6 +79,18 @@ export default function ESP32ProvisioningScreen() {
 
         <TouchableOpacity onPress={openESP32Page} style={styles.button}>
           <Text style={styles.buttonText}>Open Provisioning Page</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={pollESP32ForIp}
+          style={[styles.button, { backgroundColor: "#388e3c", marginTop: 12 }]}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Check ESP32 IP</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -79,7 +134,7 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   button: {
-    marginTop: 24,
+    marginTop: 20,
     backgroundColor: "#4c669f",
     paddingVertical: 14,
     paddingHorizontal: 24,

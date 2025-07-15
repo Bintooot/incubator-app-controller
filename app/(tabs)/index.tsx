@@ -196,11 +196,17 @@ export default function HomeScreen() {
   };
 
   const loadIp = async () => {
-    const savedIp = await AsyncStorage.getItem("esp32_ip");
-    if (savedIp) {
-      setEsp32Ip(savedIp);
-    } else {
-      Alert.alert("Error", "ESP32 IP not found. Please connect first.");
+    try {
+      const savedIp = await AsyncStorage.getItem("esp32_ip");
+
+      if (savedIp) {
+        setEsp32Ip(savedIp);
+      } else {
+        Alert.alert("Error", "ESP32 IP not found. Please connect first.");
+      }
+    } catch (error) {
+      console.error("Failed to load ESP32 IP:", error);
+      Alert.alert("Error", "Something went wrong while loading ESP32 IP.");
     }
   };
 

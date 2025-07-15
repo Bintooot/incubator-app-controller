@@ -6,16 +6,15 @@ import {
   StyleSheet,
   Linking,
   Alert,
-  Platform,
   ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
 
 export default function ESP32ProvisioningScreen() {
   const [loading, setLoading] = useState(false);
-  const [hasPolled, setHasPolled] = useState(false);
+  const [esp32Ip, setEsp32Ip] = useState(null);
+  const [pollingStatus, setPollingStatus] = useState("idle");
 
   const openESP32Page = async () => {
     const url = "http://192.168.4.1";
@@ -29,43 +28,60 @@ export default function ESP32ProvisioningScreen() {
 
   const pollESP32ForIp = async () => {
     setLoading(true);
-    const maxAttempts = 10;
+    setPollingStatus("polling");
+
     let attempts = 0;
-    let ip = null;
+    const maxAttempts = 10;
 
     while (attempts < maxAttempts) {
       try {
-        const res = await axios.get("http://192.168.4.1/ip");
-        if (res.data && res.data.ip && res.data.ip !== "not_connected") {
-          ip = res.data.ip;
-          break;
+        const res = await fetch("http://192.168.4.1/ip");
+        const json = await res.json();
+
+        if (json.status === "connected" && json.ip) {
+          console.log("✅ ESP32 connected at", json.ip);
+          setEsp32Ip(json.ip);
+          await AsyncStorage.setItem("esp32_ip", json.ip); // ✅ Save IP
+          setPollingStatus("success");
+          setLoading(false);
+          return;
         }
       } catch (err) {
-        console.log(`Attempt ${attempts + 1}:`, (err as any).message);
+        if (err instanceof Error) {
+          console.warn("Polling error:", err.message);
+        } else {
+          console.warn("Polling error:", err);
+        }
       }
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      await new Promise((res) => setTimeout(res, 3000));
       attempts++;
     }
 
+    setPollingStatus("failed");
     setLoading(false);
-
-    if (ip) {
-      await AsyncStorage.setItem("esp32_ip", ip);
-      Alert.alert("Success", `ESP32 connected to: ${ip}`);
-    } else {
-      Alert.alert("Failed", "ESP32 did not connect. Please try again.");
-    }
+    Alert.alert(
+      "Connection Failed",
+      "ESP32 did not connect within expected time."
+    );
   };
-
-  useEffect(() => {
-    if (!hasPolled) {
-      pollESP32ForIp();
-      setHasPolled(true);
-    }
-  }, []);
 
   return (
     <View style={styles.container}>
+      <View>
+        {pollingStatus === "polling" && (
+          <Text style={styles.statusText}>
+            🔄 Waiting for ESP32 to connect...
+          </Text>
+        )}
+        {pollingStatus === "success" && (
+          <Text style={styles.statusText}>✅ ESP32 Connected at {esp32Ip}</Text>
+        )}
+        {pollingStatus === "failed" && (
+          <Text style={styles.statusText}>❌ ESP32 not reachable.</Text>
+        )}
+      </View>
+
       <View style={styles.card}>
         <MaterialIcons name="wifi" size={64} color="#4c669f" />
         <Text style={styles.title}>ESP32 Setup</Text>
@@ -73,9 +89,7 @@ export default function ESP32ProvisioningScreen() {
           1. Connect to Wi-Fi named{" "}
           <Text style={styles.bold}>ESP32_Config</Text>
         </Text>
-        <Text style={styles.subtitle}>
-          2. Tap the button below to open the setup page
-        </Text>
+        <Text style={styles.subtitle}>2. Tap below to open the setup page</Text>
 
         <TouchableOpacity onPress={openESP32Page} style={styles.button}>
           <Text style={styles.buttonText}>Open Provisioning Page</Text>
@@ -146,5 +160,12 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  statusText: {
+    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+    color: "#444",
   },
 });

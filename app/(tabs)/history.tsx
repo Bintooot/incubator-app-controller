@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
   TouchableOpacity,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -105,7 +106,7 @@ export default function History() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading history records...</Text>
+          <ActivityIndicator color="#fff" />
         </View>
       ) : data.length === 0 ? (
         <View style={styles.emptyContainer}>

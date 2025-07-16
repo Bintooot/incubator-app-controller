@@ -757,7 +757,7 @@ export default function RecordsScreen() {
               style={[styles.addButton, loading && { opacity: 0.6 }]}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#4c669f" />
               ) : (
                 <Text style={styles.addButtonText}>Start New Batch</Text>
               )}
@@ -880,7 +880,7 @@ export default function RecordsScreen() {
                 }}
               >
                 {loading ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color="#4c669f" />
                 ) : (
                   <Text style={styles.addButtonText}>Cancel Batch</Text>
                 )}

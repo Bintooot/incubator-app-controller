@@ -211,6 +211,10 @@ export default function HomeScreen() {
   };
 
   const fetchSchedule = async () => {
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     try {
       const response = await axios.get(`${URL}/get-schedule`);
       setCurrentSchedule(response.data.schedule);
@@ -227,11 +231,20 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadIp();
-    fetchSchedule();
   }, []);
+
+  useEffect(() => {
+    if (esp32Ip) {
+      fetchSchedule();
+    }
+  }, [esp32Ip]);
 
   // reset schedule time
   const resetSchedule = async () => {
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     try {
       const response = await fetch(`${URL}/reset-schedule`, {
         method: "POST",
@@ -253,16 +266,20 @@ export default function HomeScreen() {
     // Validate user selection
     const validSelected = selected.filter((time) => time !== "00:00");
 
+    if (validSelected.length > 3) {
+      Alert.alert(
+        "Invalid Payload",
+        "Please select only up to 3 schedule times."
+      );
+      return;
+    }
     if (validSelected.length === 0) {
       Alert.alert("No time selected", "Please select at least one time.");
       return;
     }
 
-    if (validSelected.length < 3) {
-      Alert.alert(
-        "Invalid Payload",
-        "Please select only up to 3 schedule times."
-      );
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
       return;
     }
 
@@ -392,6 +409,10 @@ export default function HomeScreen() {
 
   const motorControl = async (position: string) => {
     if (disableButton) return;
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     try {
       if (position === "left") {
         setDisableButton(true);
@@ -417,6 +438,10 @@ export default function HomeScreen() {
   // Function to handle motor control
   const rotateMotorLeft = async () => {
     setLoading(true);
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     try {
       // Send GET request to ESP32 to rotate the motor
       const response = await axios.get(`${ESP32_IP_MOTOR_1}/left`);
@@ -433,6 +458,10 @@ export default function HomeScreen() {
 
   const rotateMotorRight = async () => {
     setLoading(true);
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     try {
       // Send GET request to ESP32 to rotate the motor
       const response = await axios.get(`${ESP32_IP_MOTOR_1}/right`);
@@ -452,11 +481,19 @@ export default function HomeScreen() {
     setTimeout(() => {
       setStatus("Waiting for command...");
     }, 5000);
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     await axios.get(`${ESP32_IP_MOTOR_1}/restart`);
   };
 
   // Function to fetch sensor data from ESP32
   const getSensorData = async () => {
+    if (!URL) {
+      Alert.alert("Error", "ESP32 IP not set.");
+      return;
+    }
     try {
       setLoading(true); // Set loading to true before fetching
       const response = await fetch(ESP32_URL_DHT22);
@@ -479,14 +516,14 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    getSensorData();
-
-    const intervalId = setInterval(() => {
+    if (esp32Ip) {
       getSensorData();
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, []);
+      const intervalId = setInterval(() => {
+        getSensorData();
+      }, 1000);
+      return () => clearInterval(intervalId);
+    }
+  }, [esp32Ip]);
 
   //fetch real-time
   useEffect(() => {

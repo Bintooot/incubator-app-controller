@@ -106,7 +106,7 @@ export default function History() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color="#4c669f" />
         </View>
       ) : data.length === 0 ? (
         <View style={styles.emptyContainer}>

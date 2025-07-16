@@ -68,12 +68,25 @@ export default function ESP32ProvisioningScreen() {
 
   const handleClearCredentials = async () => {
     try {
-      await fetch(`http://${esp32Ip}/reset-wifi`, { method: "POST" });
-      await AsyncStorage.removeItem("esp32_ip");
-      setEsp32Ip(null);
-      Alert.alert("Success", "ESP32 credentials cleared and disconnected.");
+      const res = await fetch(`http://192.168.4.1/reset-wifi`, {
+        method: "POST",
+      });
+
+      const data = await res.json(); // Parse the JSON response
+
+      if (res.ok) {
+        await AsyncStorage.removeItem("esp32_ip");
+        setEsp32Ip(null);
+        Alert.alert("Success", data.message || "Wi-Fi credentials cleared.");
+      } else {
+        Alert.alert(
+          "Error",
+          data.message || "Failed to clear ESP32 credentials."
+        );
+      }
     } catch (error) {
-      Alert.alert("Error", "Failed to clear ESP32 credentials.");
+      Alert.alert("Error", "Failed to communicate with ESP32.");
+      console.error("❌ Clear credentials error:", error);
     }
   };
 

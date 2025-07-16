@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons, AntDesign } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 
 import * as Device from "expo-device";
@@ -294,10 +294,12 @@ export default function RecordsScreen() {
     }
   }, [notification]);
 
+  const notifiedBatchIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!latestBatches || latestBatches.length === 0) return;
 
-    const notifiedBatchIds = new Set<string>();
+    setLoading(true);
 
     const intervalId = setInterval(() => {
       const now = new Date();
@@ -311,24 +313,25 @@ export default function RecordsScreen() {
             : new Date(batch.endDate);
 
         if (
-          batchEndDate !== null &&
-          now.getTime() >= batchEndDate.getTime() &&
-          !notifiedBatchIds.has(batch.id)
+          batchEndDate &&
+          now >= batchEndDate &&
+          !notifiedBatchIdsRef.current.has(batch.id)
         ) {
-          // Notify only once per batch
+          // ✅ Notify only once per batch
           incubationProcessCompleted(expoPushToken);
           setNotification(`Incubation for Batch ${batch.batchId} completed.`);
           evaluateBatch(batch.id, batch.success || 0);
           setLatestBatchStatus(true);
-          notifiedBatchIds.add(batch.id);
+          notifiedBatchIdsRef.current.add(batch.id);
         }
       });
 
       setCurrentDate(now);
+      setLoading(false);
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [latestBatches, expoPushToken]);
+  }, [latestBatches]);
 
   function calculateEndDate(
     startDate: Date | string,
@@ -594,7 +597,11 @@ export default function RecordsScreen() {
             <Text style={styles.sectionTitle}>Current Incubation</Text>
           </View>
 
-          {latestBatches.length === 0 ? (
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator color="#4c669f" />
+            </View>
+          ) : latestBatches.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No batch record yet.</Text>
             </View>
@@ -1235,5 +1242,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#999",
     fontStyle: "italic",
+  },
+
+  // Loading
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#555",
   },
 });

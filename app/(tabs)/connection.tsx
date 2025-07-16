@@ -66,6 +66,17 @@ export default function ESP32ProvisioningScreen() {
     );
   };
 
+  const handleClearCredentials = async () => {
+    try {
+      await fetch(`http://${esp32Ip}/reset-wifi`, { method: "POST" });
+      await AsyncStorage.removeItem("esp32_ip");
+      setEsp32Ip(null);
+      Alert.alert("Success", "ESP32 credentials cleared and disconnected.");
+    } catch (error) {
+      Alert.alert("Error", "Failed to clear ESP32 credentials.");
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View>
@@ -105,6 +116,13 @@ export default function ESP32ProvisioningScreen() {
           ) : (
             <Text style={styles.buttonText}>Check ESP32 IP</Text>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleClearCredentials}
+          style={styles.button}
+        >
+          <Text style={styles.buttonText}>Factory Reset ESP32</Text>
         </TouchableOpacity>
       </View>
     </View>

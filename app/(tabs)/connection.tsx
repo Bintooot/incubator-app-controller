@@ -20,9 +20,19 @@ export default function ESP32ProvisioningScreen() {
   const [connectedToESP, setConnectedToESP] = useState(false);
 
   useEffect(() => {
-    NetworkInfo.getSSID().then((ssid) => {
-      setConnectedToESP(ssid === "ESP32_Config");
-    });
+    const checkNetwork = () => {
+      NetworkInfo.getSSID().then((ssid) => {
+        setConnectedToESP(ssid === "ESP32_Config");
+      });
+    };
+
+    // Check immediately
+    checkNetwork();
+
+    // Then check every 2 seconds
+    const interval = setInterval(checkNetwork, 2000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const openESP32Page = async () => {
@@ -145,20 +155,48 @@ export default function ESP32ProvisioningScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.dangerButton, resetting && styles.disabled]}
-          onPress={handleClearCredentials}
-          disabled={resetting}
-        >
-          {resetting ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <>
-              <MaterialIcons name="restart-alt" size={20} color="white" />
-              <Text style={styles.buttonText}>Factory Reset ESP32</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {esp32Ip === null ? (
+          // Show this when ESP32 IP is not set (not provisioned yet)
+          <View>
+            <Text style={styles.stepText}>
+              <Text style={styles.bold}>Step 3:</Text> Check if ESP32 connected
+              to WiFi
+            </Text>
+            <TouchableOpacity
+              style={[styles.successButton, loading && styles.disabled]}
+              onPress={pollESP32ForIp}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Entypo name="network" size={20} color="white" />
+                  <Text style={styles.buttonText}>Check ESP32 IP</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Show this when ESP32 IP is already set (provisioned)
+          <View>
+            <Text style={styles.status}>✅ ESP32 connected at {esp32Ip}</Text>
+            <TouchableOpacity
+              style={[styles.dangerButton, resetting && styles.disabled]}
+              onPress={handleClearCredentials}
+              disabled={resetting}
+            >
+              {resetting ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <MaterialIcons name="restart-alt" size={20} color="white" />
+                  <Text style={styles.buttonText}>Factory Reset ESP32</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {pollingStatus === "success" && (

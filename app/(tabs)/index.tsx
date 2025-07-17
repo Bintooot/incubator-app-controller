@@ -211,19 +211,25 @@ export default function HomeScreen() {
   };
 
   const fetchSchedule = async () => {
-    if (!URL) {
-      Alert.alert("Error", "ESP32 IP not set.");
+    if (!esp32Ip) {
+      console.log("No ESP32 IP available");
       return;
     }
+
+    const scheduleURL = `http://${esp32Ip}/get-schedule`;
+
     try {
-      const response = await axios.get(`${URL}/get-schedule`);
+      console.log("Fetching schedule from:", scheduleURL);
+      const response = await axios.get(scheduleURL);
+      console.log("Schedule response:", response.data);
       setCurrentSchedule(response.data.schedule);
     } catch (error: unknown) {
       let errorMessage = "Unknown error";
       if (error instanceof Error) errorMessage = error.message;
+      console.error("Failed to fetch schedule:", errorMessage);
       Alert.alert(
         "Error",
-        "Failed to fetch schedule connection might disconnected: " +
+        "Failed to fetch schedule - connection might be disconnected: " +
           errorMessage
       );
     }
@@ -235,7 +241,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (esp32Ip) {
-      fetchSchedule();
+      console.log("ESP32 IP changed to:", esp32Ip);
+
+      setTimeout(() => {
+        fetchSchedule();
+      }, 100);
     }
   }, [esp32Ip]);
 

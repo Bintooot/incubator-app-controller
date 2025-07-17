@@ -7,45 +7,119 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  AppState,
+  AppStateStatus,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons, Entypo, FontAwesome5 } from "@expo/vector-icons";
 import { NetworkInfo } from "react-native-network-info";
 
+type PollingStatus = "idle" | "polling" | "success" | "failed";
+
 export default function ESP32ProvisioningScreen() {
-  const [loading, setLoading] = useState(false);
-  const [esp32Ip, setEsp32Ip] = useState(null);
-  const [pollingStatus, setPollingStatus] = useState("idle");
-  const [resetting, setResetting] = useState(false);
-  const [connectedToESP, setConnectedToESP] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [esp32Ip, setEsp32Ip] = useState<string | null>(null);
+  const [pollingStatus, setPollingStatus] = useState<PollingStatus>("idle");
+  const [resetting, setResetting] = useState<boolean>(false);
+  const [connectedToESP, setConnectedToESP] = useState<boolean>(false);
 
   useEffect(() => {
-    const checkNetwork = () => {
-      NetworkInfo.getSSID().then((ssid) => {
-        setConnectedToESP(ssid === "ESP32_Config");
-      });
+    let interval: number | null = null;
+    let isActive = true;
+    let lastSSID: string | null = null;
+
+    const checkNetwork = async () => {
+      if (!isActive) return;
+
+      try {
+        const ssid = await NetworkInfo.getSSID();
+
+        // Debug logs
+        console.log("Raw SSID:", JSON.stringify(ssid));
+        console.log("SSID type:", typeof ssid);
+        console.log("Expected: ESP32_Config");
+        console.log("Match:", ssid === "ESP32_Config");
+
+        // Only update state if SSID actually changed
+        if (ssid !== lastSSID) {
+          lastSSID = ssid;
+          const isConnected = ssid === "ESP32_Config";
+          setConnectedToESP(isConnected);
+          console.log("ESP32 connection status:", isConnected);
+        }
+      } catch (error) {
+        console.log("SSID Error:", error);
+        if (lastSSID !== null) {
+          lastSSID = null;
+          setConnectedToESP(false);
+        }
+      }
     };
 
-    // Check immediately
-    checkNetwork();
+    const startMonitoring = () => {
+      // Clear any existing interval first
+      if (interval) {
+        clearInterval(interval);
+      }
 
-    // Then check every 2 seconds
-    const interval = setInterval(checkNetwork, 2000);
+      console.log("Starting SSID monitoring...");
+      checkNetwork(); // Check immediately
+      interval = setInterval(checkNetwork, 1000); // Check every second
+    };
 
-    return () => clearInterval(interval);
+    const stopMonitoring = () => {
+      console.log("Stopping SSID monitoring...");
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    // Start monitoring when component mounts
+    startMonitoring();
+
+    // Handle app state changes (foreground/background)
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      console.log("App state changed to:", nextAppState);
+      if (nextAppState === "active") {
+        isActive = true;
+        startMonitoring();
+      } else {
+        isActive = false;
+        stopMonitoring();
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange
+    );
+
+    // Cleanup function
+    return () => {
+      console.log("Cleaning up SSID monitoring...");
+      isActive = false;
+      stopMonitoring();
+      subscription?.remove();
+    };
   }, []);
 
-  const openESP32Page = async () => {
+  const openESP32Page = async (): Promise<void> => {
     const url = "http://192.168.4.1";
-    const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      Linking.openURL(url);
-    } else {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert("Error", "Unable to open the ESP32 provisioning page.");
+      }
+    } catch (error) {
+      console.error("Error opening URL:", error);
       Alert.alert("Error", "Unable to open the ESP32 provisioning page.");
     }
   };
 
-  const pollESP32ForIp = async () => {
+  const pollESP32ForIp = async (): Promise<void> => {
     setLoading(true);
     setPollingStatus("polling");
 
@@ -54,7 +128,19 @@ export default function ESP32ProvisioningScreen() {
 
     while (attempts < maxAttempts) {
       try {
-        const res = await fetch("http://192.168.4.1/ip");
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+        const res = await fetch("http://192.168.4.1/ip", {
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
         const json = await res.json();
 
         if (json.status === "connected" && json.ip) {
@@ -64,9 +150,18 @@ export default function ESP32ProvisioningScreen() {
           setLoading(false);
 
           try {
+            const restartController = new AbortController();
+            const restartTimeoutId = setTimeout(
+              () => restartController.abort(),
+              3000
+            );
+
             await fetch("http://192.168.4.1/trigger-restart", {
               method: "POST",
+              signal: restartController.signal,
             });
+
+            clearTimeout(restartTimeoutId);
           } catch (err) {
             console.warn("Failed to trigger restart:", err);
           }
@@ -77,7 +172,7 @@ export default function ESP32ProvisioningScreen() {
         console.warn("Polling error:", err);
       }
 
-      await new Promise((res) => setTimeout(res, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       attempts++;
     }
 
@@ -90,30 +185,52 @@ export default function ESP32ProvisioningScreen() {
     );
   };
 
-  const handleClearCredentials = async () => {
+  const handleClearCredentials = async (): Promise<void> => {
     try {
       setResetting(true);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       const res = await fetch("http://192.168.4.1/reset-wifi", {
         method: "POST",
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
       const data = await res.json();
 
-      if (res.ok) {
-        await AsyncStorage.removeItem("esp32_ip");
-        setEsp32Ip(null);
-        Alert.alert("Success", data.message || "Wi-Fi credentials cleared.");
-      } else {
-        Alert.alert(
-          "Error",
-          data.message || "Failed to clear ESP32 credentials."
-        );
-      }
+      await AsyncStorage.removeItem("esp32_ip");
+      setEsp32Ip(null);
+      Alert.alert("Success", data.message || "Wi-Fi credentials cleared.");
     } catch (error) {
+      console.error("Error clearing credentials:", error);
       Alert.alert("Error", "Failed to communicate with ESP32.");
     } finally {
       setResetting(false);
     }
   };
+
+  // Load saved ESP32 IP on component mount
+  useEffect(() => {
+    const loadSavedIP = async () => {
+      try {
+        const savedIP = await AsyncStorage.getItem("esp32_ip");
+        if (savedIP) {
+          setEsp32Ip(savedIP);
+        }
+      } catch (error) {
+        console.error("Error loading saved IP:", error);
+      }
+    };
+
+    loadSavedIP();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -135,24 +252,13 @@ export default function ESP32ProvisioningScreen() {
         <Text style={styles.stepText}>
           <Text style={styles.bold}>Step 2:</Text> Open configuration page
         </Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={openESP32Page}>
+        <TouchableOpacity
+          style={[styles.primaryButton, !connectedToESP && styles.disabled]}
+          onPress={openESP32Page}
+          disabled={!connectedToESP}
+        >
           <MaterialIcons name="launch" size={20} color="white" />
           <Text style={styles.buttonText}>Open Provisioning Page</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.successButton, loading && styles.disabled]}
-          onPress={pollESP32ForIp}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <>
-              <Entypo name="network" size={20} color="white" />
-              <Text style={styles.buttonText}>Check ESP32 IP</Text>
-            </>
-          )}
         </TouchableOpacity>
 
         {esp32Ip === null ? (
@@ -163,9 +269,12 @@ export default function ESP32ProvisioningScreen() {
               to WiFi
             </Text>
             <TouchableOpacity
-              style={[styles.successButton, loading && styles.disabled]}
+              style={[
+                styles.successButton,
+                (loading || !connectedToESP) && styles.disabled,
+              ]}
               onPress={pollESP32ForIp}
-              disabled={loading}
+              disabled={loading || !connectedToESP}
             >
               {loading ? (
                 <ActivityIndicator color="white" />
@@ -182,9 +291,12 @@ export default function ESP32ProvisioningScreen() {
           <View>
             <Text style={styles.status}>✅ ESP32 connected at {esp32Ip}</Text>
             <TouchableOpacity
-              style={[styles.dangerButton, resetting && styles.disabled]}
+              style={[
+                styles.dangerButton,
+                (resetting || !connectedToESP) && styles.disabled,
+              ]}
               onPress={handleClearCredentials}
-              disabled={resetting}
+              disabled={resetting || !connectedToESP}
             >
               {resetting ? (
                 <ActivityIndicator color="white" />
@@ -199,7 +311,7 @@ export default function ESP32ProvisioningScreen() {
         )}
       </View>
 
-      {pollingStatus === "success" && (
+      {pollingStatus === "success" && esp32Ip && (
         <Text style={styles.status}>✅ ESP32 connected at {esp32Ip}</Text>
       )}
       {pollingStatus === "failed" && (
@@ -210,6 +322,7 @@ export default function ESP32ProvisioningScreen() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
